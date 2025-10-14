@@ -1,0 +1,19 @@
+---
+title: "Final Project EDA"
+authors: "Anna Livingstone Nate Groves"
+date: "Fall 2025"
+output:
+  pdf_document:
+    number_sections: no
+    toc: false
+    toc_depth: 1
+  html_document:
+    df_print: paged
+    number_sections: no
+    toc: false
+    toc_depth: 1
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
