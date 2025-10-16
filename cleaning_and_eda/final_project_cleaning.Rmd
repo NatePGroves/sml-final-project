@@ -1,0 +1,55 @@
+---
+title: "Final Project EDA"
+authors: "Anna Livingstone Nate Groves"
+date: "Fall 2025"
+output:
+  pdf_document:
+    number_sections: no
+    toc: false
+    toc_depth: 1
+  html_document:
+    df_print: paged
+    number_sections: no
+    toc: false
+    toc_depth: 1
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+importing each set of data
+```{r}
+
+circulation <- drop_na(read_csv("../data/library_circulation.csv"))
+demographics <- drop_na(read_csv("../data/library_demographics.csv"))
+electronic <- read_csv("../data/library_electronic.csv")%>%
+              filter(is.na(`Suppression Note`)) %>% # This only exists if data is missing, so we can drop it to make our lives easier
+              select(-(`Suppression Note`)) %>%
+              drop_na()
+programs <- drop_na(read_csv("../data/library_programs.csv"))
+revenue <- read_csv("../data/library_revenue.csv") %>%
+              filter(is.na(`Suppression Note`)) %>% # This only exists if data is missing, so we can drop it to make our lives easier
+              select(-(`Suppression Note`)) %>%
+              drop_na()
+services <- drop_na(read_csv("../data/library_services.csv"))
+
+```
+
+joining data together (some weird quirks in the data, but this shouldn't change anything just make column names cleaner)
+```{r}
+libraries <- inner_join(circulation, demographics, by = c("FSCS Key", "Library Name", "Service Area Population", "Locale"))
+libraries <- inner_join(libraries, electronic, by = c("FSCS Key", "Library Name", "Service Area Population", "Locale"))
+libraries <- inner_join(libraries, programs, by = c("FSCS Key", "Library Name", "Service Area Population", "Locale"))
+libraries <- inner_join(libraries, revenue, by = c("FSCS Key", "Library Name", "Service Area Population", "Locale"))
+libraries <- inner_join(libraries, services, by = c("FSCS Key", "Library Name", "Service Area Population", "Locale"))
+```
+
+removing all negative numbers which mean missing values and saving
+```{r}
+libraries_filtered <- libraries %>%
+     filter(if_all(where(is.numeric), ~ . >= 0))
+write.csv(libraries_filtered, "../data/libraries.csv", row.names = FALSE)
+```
+
