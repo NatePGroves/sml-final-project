@@ -36,21 +36,6 @@ revenue <- read_csv("../sml-final-project/library_revenue.csv") %>%
 services <- drop_na(read_csv("../sml-final-project/library_services.csv"))
 
 ```
-```{r}
-# Function to print dimensions after removing NAs
-print_clean_dims <- function(df, name) {
-  clean_df <- na.omit(df)
-  cat(name, ":", dim(clean_df)[1], "rows,", dim(clean_df)[2], "columns\n")
-}
-
-# Print dimensions for each
-print_clean_dims(circulation, "circulation")
-print_clean_dims(demographics, "demographics")
-print_clean_dims(electronic, "electronic")
-print_clean_dims(programs, "programs")
-print_clean_dims(revenue, "revenue")
-print_clean_dims(services, "services")
-```
 
 joining data together (some weird quirks in the data, but this shouldn't change anything just make column names cleaner)
 ```{r}
@@ -63,6 +48,8 @@ libraries <- inner_join(libraries, services, by = c("FSCS Key", "Library Name", 
 
 selecting the right variables
 ```{r}
+libraries_filtered <- libraries %>%
+     filter(if_all(where(is.numeric), ~ . >= 0))
 write.csv(libraries, "libraries.csv", row.names = FALSE)
 ```
 
