@@ -45,6 +45,7 @@ libraries_clean <- libraries|>
   rename("Library Name"="Library Name.x", "Locale"="Locale.x", "Service Area Population"="Service Area Population.x", "Service Hours per Year"="Hours/Year")
 
 
+
 variable.names(libraries_clean)
 ```
 
