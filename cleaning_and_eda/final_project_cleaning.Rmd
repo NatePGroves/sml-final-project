@@ -22,18 +22,18 @@ library(tidyverse)
 importing each set of data
 ```{r}
 
-circulation <- drop_na(read_csv("../sml-final-project/library_circulation.csv"))
-demographics <- drop_na(read_csv("../sml-final-project/library_demographics.csv"))
-electronic <- read_csv("../sml-final-project/library_electronic.csv")%>%
+circulation <- drop_na(read_csv("../data/library_circulation.csv"))
+demographics <- drop_na(read_csv("../data/library_demographics.csv"))
+electronic <- read_csv("../data/library_electronic.csv")%>%
               filter(is.na(`Suppression Note`)) %>% # This only exists if data is missing, so we can drop it to make our lives easier
               select(-(`Suppression Note`)) %>%
               drop_na()
-programs <- drop_na(read_csv("../sml-final-project/library_programs.csv"))
-revenue <- read_csv("../sml-final-project/library_revenue.csv") %>%
+programs <- drop_na(read_csv("../data/library_programs.csv"))
+revenue <- read_csv("../data/library_revenue.csv") %>%
               filter(is.na(`Suppression Note`)) %>% # This only exists if data is missing, so we can drop it to make our lives easier
               select(-(`Suppression Note`)) %>%
               drop_na()
-services <- drop_na(read_csv("../sml-final-project/library_services.csv"))
+services <- drop_na(read_csv("../data/library_services.csv"))
 
 ```
 
@@ -46,10 +46,10 @@ libraries <- inner_join(libraries, revenue, by = c("FSCS Key", "Library Name", "
 libraries <- inner_join(libraries, services, by = c("FSCS Key", "Library Name", "Service Area Population", "Locale"))
 ```
 
-selecting the right variables
+removing all negative numbers which mean missing values and saving
 ```{r}
 libraries_filtered <- libraries %>%
      filter(if_all(where(is.numeric), ~ . >= 0))
-write.csv(libraries, "libraries.csv", row.names = FALSE)
+write.csv(libraries_filtered, "../data/libraries.csv", row.names = FALSE)
 ```
 
