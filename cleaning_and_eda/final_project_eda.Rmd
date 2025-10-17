@@ -77,7 +77,7 @@ remove_outliers <- function(x) {
 ignore_cols <- c("Bookmobiles", "Branch Library")
 
 # Apply only to numeric, non-binary, and not ignored columns
-libraries_no_outliers <- libraries_filtered %>%
+libraries_no_outliers <- libraries %>%
   mutate(across(
     .cols = where(is.numeric) & !all_of(ignore_cols),
     .fns = remove_outliers
