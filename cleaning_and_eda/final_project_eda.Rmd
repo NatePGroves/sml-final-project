@@ -1,0 +1,127 @@
+---
+title: "Final Project EDA"
+authors: "Anna Livingstone Nate Groves"
+date: "Fall 2025"
+output:
+  pdf_document:
+    number_sections: no
+    toc: false
+    toc_depth: 1
+  html_document:
+    df_print: paged
+    number_sections: no
+    toc: false
+    toc_depth: 1
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(corrplot)
+library(car)
+```
+
+
+```{r}
+libraries <- read_csv("../data/libraries.csv")
+numeric_libaries <- libraries %>%
+  select(where(is.numeric))
+full_correlation_matrix <- cor(numeric_libaries)
+
+```
+Looking at the correlation plot, we see that there are many variables, with some of them having very little correlation to our variable of interest, Total Circulation. Let's drop some.
+
+```{r}
+y_cor_matrix<- full_correlation_matrix[, "Total Circulation", drop = FALSE]
+y_cor_matrix[order(abs(y_cor_matrix[, 1]), decreasing = TRUE), , drop = FALSE]
+```
+There are too many variables for a simple correlation matrix, and looking at this list, it seems nearly all of the numeric variables have some correlation to Total Circulation.
+
+However, this does not show us potential collinearity, for that we can fit a simple model and check the VIF:
+```{r}
+model <- lm(`Total Circulation` ~ ., data = numeric_libaries)
+vif(model)
+```
+This shows that there is a generally high level of collinearity, and we should
+keep this in mind for the analysis. 
+
+```{r}
+for (col in names(numeric_libaries)) {
+  hist(
+    numeric_libaries[[col]],
+    main = paste("Histogram of", col),
+    xlab = col,
+    col = "skyblue",
+    border = "white"
+  )
+}
+```
+The histograms of the numeric data show that many of these have extreme outliers, so let's remove them:
+
+library(dplyr)
+```{r}
+# Function to remove outliers using the IQR rule
+remove_outliers <- function(x) {
+  if (is.numeric(x) && length(unique(na.omit(x))) > 2) {  # skip binary
+    q1 <- quantile(x, 0.25, na.rm = TRUE)
+    q3 <- quantile(x, 0.75, na.rm = TRUE)
+    iqr <- q3 - q1
+    lower <- q1 - 1.5 * iqr
+    upper <- q3 + 1.5 * iqr
+    x[x < lower | x > upper] <- NA  # mark outliers
+  }
+  return(x)
+}
+
+# Columns to ignore
+ignore_cols <- c("Bookmobiles", "Branch Library")
+
+# Apply only to numeric, non-binary, and not ignored columns
+libraries_no_outliers <- libraries_filtered %>%
+  mutate(across(
+    .cols = where(is.numeric) & !all_of(ignore_cols),
+    .fns = remove_outliers
+  )) %>%
+  drop_na()
+
+```
+
+
+```{r}
+libraries_no_outliers_numeric <- libraries_no_outliers %>% select(where(is.numeric))
+for (col in names(libraries_no_outliers_numeric)) {
+  hist(
+    libraries_no_outliers_numeric[[col]],
+    main = paste("Histogram of", col),
+    xlab = col,
+    col = "skyblue",
+    border = "white"
+  )
+}
+```
+
+With outliers removed, the data is more reasonable, but skewed to the right. With this being said, we should consider Box-Cox transformations when making the models.
+
+```{r}
+categorical_data <- libraries %>% select(!where(is.numeric))
+
+# Loop through each categorical column and plot
+for (col in names(categorical_data)) {
+  ggplot(categorical_data, aes_string(x = col)) +
+    geom_bar(fill = "steelblue", color = "white") +
+    theme_minimal() +
+    labs(
+      title = paste("Bar Chart of", col),
+      x = col,
+      y = "Count"
+    ) +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    ) -> p
+  
+  print(p)
+}
+```
+With outliers removed, we see an overrepresentation of NY, IL, and HI, which means we should be careful making generalizations about the data to the entire nation.
+The locale is not as surprising, but we should be aware of the fact that the city is less represented than other types of locale.
+

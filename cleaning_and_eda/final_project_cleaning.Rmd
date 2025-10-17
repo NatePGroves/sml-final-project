@@ -1,5 +1,5 @@
 ---
-title: "Final Project EDA"
+title: "Final Project Cleaning"
 authors: "Anna Livingstone Nate Groves"
 date: "Fall 2025"
 output:
@@ -47,9 +47,18 @@ libraries <- inner_join(libraries, services, by = c("FSCS Key", "Library Name", 
 ```
 
 removing all negative numbers which mean missing values and saving
+and adding some columns which are more useful
 ```{r}
 libraries_filtered <- libraries %>%
-     filter(if_all(where(is.numeric), ~ . >= 0))
+     filter(if_all(where(is.numeric), ~ . >= 0)) %>%
+      mutate(state = str_sub(`FSCS Key`, 1, 2)) %>%
+      select(-c(`FSCS Key`, `Library Name`, `Total Library Programs`, `Total Revenue ($)`, `Electronic Material Circulation`, `Print Material Circulation`, `Other Physical Item Circulation`, `Total Program Attendance`, )) %>%
+      select(state, everything(), `Total Circulation` = `Total Circulation`)
 write.csv(libraries_filtered, "../data/libraries.csv", row.names = FALSE)
+```
+
+Show the final file:
+```{r}
+show(libraries_filtered)
 ```
 
