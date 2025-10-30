@@ -54,7 +54,13 @@ libraries_filtered <- libraries %>%
       mutate(state = str_sub(`FSCS Key`, 1, 2)) %>%
       select(-c(`FSCS Key`, `Library Name`, `Total Library Programs`, `Total Revenue ($)`, `Electronic Material Circulation`, `Print Material Circulation`, `Other Physical Item Circulation`, `Total Program Attendance`, )) %>%
       select(state, everything(), `Total Circulation` = `Total Circulation`)
-write.csv(libraries_filtered, "../data/libraries.csv", row.names = FALSE)
+set.seed(13)
+smp_size <- floor(0.8 * nrow(libraries_filtered)) # 80% for training
+train_indices <- sample(seq_len(nrow(libraries_filtered)), size = smp_size)
+train_data <- libraries_filtered[train_indices, ]
+test_data <- libraries_filtered[-train_indices, ] # Remaining rows for testing
+write.csv(train_data, "../data/libraries.csv", row.names = FALSE)
+write.csv(test_data, "../data/libraries_testing.cdv", row.names = FALSE)
 ```
 
 Show the final file:
