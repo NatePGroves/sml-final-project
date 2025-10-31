@@ -60,7 +60,7 @@ train_indices <- sample(seq_len(nrow(libraries_filtered)), size = smp_size)
 train_data <- libraries_filtered[train_indices, ]
 test_data <- libraries_filtered[-train_indices, ] # Remaining rows for testing
 write.csv(train_data, "../data/libraries.csv", row.names = FALSE)
-write.csv(test_data, "../data/libraries_testing.cdv", row.names = FALSE)
+write.csv(test_data, "../data/libraries_testing.csv", row.names = FALSE)
 ```
 
 Show the final file:

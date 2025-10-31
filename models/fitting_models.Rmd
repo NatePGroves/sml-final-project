@@ -19,7 +19,27 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(corrplot)
 library(car)
+library(boot)
+library(leaps)
 libraries <- read_csv("../data/libraries.csv")
+# Count occurrences per state
+state_counts <- table(libraries$state)
+
+# Find states with < 10 occurrences
+rare_states <- names(state_counts[state_counts < 20])
+
+# Combine them into "Other" (this is for CV purposes)
+libraries$state <- as.character(libraries$state)
+libraries$state[libraries$state %in% rare_states] <- "Other"
+libraries$state <- factor(libraries$state)  # re-factor to clean up
+# Do the same for testing data:
+library_testing <- read_csv("../data/libraries_testing.csv")
+library_testing$state <- as.character(library_testing$state)
+library_testing$state[library_testing$state %in% rare_states] <- "Other"
+library_testing$state[!(library_testing$state %in% libraries$state)] <- "Other"
+library_testing$state <- factor(library_testing$state)  # re-factor to clean up
+
+
 ```
 
 Define functions so we can remove outliers from training data.
@@ -51,14 +71,50 @@ libraries <- libraries %>%
 ```
 
 Libraries is already the training set.
-We can start by using a linear model:
+We can start by using a full linear model:
 ```{r}
-full.library.model <- lm(`Total Circulation` ~ ., data = libraries)
+full.library.model <- glm(`Total Circulation` ~ ., data = libraries, family = "gaussian")
 summary(full.library.model)
 ```
+
+
 The full library model has lots of predictors from the dummy variables of state, 
-but we can probably remove some of the predictors.
+but we can probably remove some of the predictors. 
+```{r}
+step(full.library.model, direction="both")
+```
+The best model uses less predictors, and we can save it: 
 
+```{r}
+best.stepwise.model <- glm(formula = `Total Circulation` ~ state + Locale + `Service Area Population` +
+    `Percentage of Children's Material Circulation` + `Branch Library` + 
+    `Internet Computers` + `Wireless Sessions` + `Children's Program Attendance` + 
+    `Local Revenue ($)` + `State Revenue ($)` + `Hours/Year` + 
+    `Physical Visits` + `Registered Users` + `Inter-library Loans from Other Library`, 
+    data = libraries, family = "gaussian")
 
+```
+
+We can compare the prediction errors for both models using CV:
+```{r}
+set.seed(13)
+cv.glm(libraries, best.stepwise.model, K=100)$delta[2]
+set.seed(13)
+cv.glm(libraries, full.library.model, K=100)$delta[2]
+```
+Here, we see that the full model has a lower delta than the stepwise selection model,
+a surprising result, but pointing to the idea that the full model might capture more information.
+
+We can test both models against the testing data. 
+```{r}
+full.predictions <- predict(full.library.model, newdata = library_testing, type = "response")
+full.residuals <- library_testing$`Total Circulation` - full.predictions
+stepwise.predictions <- predict(best.stepwise.model, newdata = library_testing, type = "response")
+stepwise.residuals <- library_testing$`Total Circulation` - stepwise.predictions
+full.MSE <- mean((full.residuals)^2)
+stepwise.MSE <- mean((stepwise.residuals)^2)
+print(c(full.MSE, stepwise.MSE))
+```
+  
 
 
