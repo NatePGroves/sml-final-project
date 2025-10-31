@@ -1,5 +1,5 @@
 ---
-title: "Final Project EDA"
+title: "Final Project Fitting Models"
 authors: "Anna Livingstone Nate Groves"
 date: "Fall 2025"
 output:
@@ -22,22 +22,7 @@ library(car)
 library(boot)
 library(leaps)
 libraries <- read_csv("../data/libraries.csv")
-# Count occurrences per state
-state_counts <- table(libraries$state)
 
-# Find states with < 10 occurrences
-rare_states <- names(state_counts[state_counts < 20])
-
-# Combine them into "Other" (this is for CV purposes)
-libraries$state <- as.character(libraries$state)
-libraries$state[libraries$state %in% rare_states] <- "Other"
-libraries$state <- factor(libraries$state)  # re-factor to clean up
-# Do the same for testing data:
-library_testing <- read_csv("../data/libraries_testing.csv")
-library_testing$state <- as.character(library_testing$state)
-library_testing$state[library_testing$state %in% rare_states] <- "Other"
-library_testing$state[!(library_testing$state %in% libraries$state)] <- "Other"
-library_testing$state <- factor(library_testing$state)  # re-factor to clean up
 
 
 ```
@@ -58,7 +43,7 @@ remove_outliers <- function(x) {
 }
 
 # Columns to ignore
-ignore_cols <- c("Bookmobiles", "Branch Library")
+ignore_cols <- c("Bookmobiles", "Branch Library", "state")
 
 # Apply only to numeric, non-binary, and not ignored columns
 libraries <- libraries %>%
@@ -67,6 +52,23 @@ libraries <- libraries %>%
     .fns = remove_outliers
   )) %>%
   drop_na()
+
+# Count occurrences per state
+state_counts <- table(libraries$state)
+
+# Find states with < 20 occurrences
+rare_states <- names(state_counts[state_counts < 20])
+
+# Combine them into "Other" (this is for CV purposes)
+libraries$state <- as.character(libraries$state)
+libraries$state[libraries$state %in% rare_states] <- "Other"
+libraries$state <- factor(libraries$state)  # re-factor to clean up
+# Do the same for testing data:
+library_testing <- read_csv("../data/libraries_testing.csv")
+library_testing$state <- as.character(library_testing$state)
+library_testing$state[library_testing$state %in% rare_states] <- "Other"
+library_testing$state[!(library_testing$state %in% libraries$state)] <- "Other"
+library_testing$state <- factor(library_testing$state)  # re-factor to clean up
 
 ```
 
@@ -102,8 +104,7 @@ cv.glm(libraries, best.stepwise.model, K=100)$delta[2]
 set.seed(13)
 cv.glm(libraries, full.library.model, K=100)$delta[2]
 ```
-Here, we see that the full model has a lower delta than the stepwise selection model,
-a surprising result, but pointing to the idea that the full model might capture more information.
+Here, we see that the stepwise model has a lower delta than the full selection model.
 
 We can test both models against the testing data. 
 ```{r}
@@ -115,6 +116,6 @@ full.MSE <- mean((full.residuals)^2)
 stepwise.MSE <- mean((stepwise.residuals)^2)
 print(c(full.MSE, stepwise.MSE))
 ```
-  
-
+One the testing data, the full model actually performed better than the stepwise
+model, going against the CV results.
 
