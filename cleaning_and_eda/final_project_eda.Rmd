@@ -125,3 +125,6 @@ for (col in names(categorical_data)) {
 With outliers removed, we see an overrepresentation of NY, IL, and HI, which means we should be careful making generalizations about the data to the entire nation.
 The locale is not as surprising, but we should be aware of the fact that the city is less represented than other types of locale.
 
+Because this is a regression task, we should be considering Ridge and Lasso multi variable regression models to minimize the effects of the high collinearity.
+
+

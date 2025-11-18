@@ -1,0 +1,71 @@
+---
+title: "Final Project EDA"
+authors: "Anna Livingstone Nate Groves"
+date: "Fall 2025"
+output:
+  pdf_document:
+    number_sections: no
+    toc: false
+    toc_depth: 1
+  html_document:
+    df_print: paged
+    number_sections: no
+    toc: false
+    toc_depth: 1
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+importing each set of data
+
+```{r results=FALSE, message=FALSE, warning=FALSE}
+library(tidyverse)
+circulation <- read_csv("../sml-final-project/library_circulation.csv")
+demographics <- read_csv("../sml-final-project/library_demographics.csv")
+electronic <- read_csv("../sml-final-project/library_electronic.csv")
+programs <- read_csv("../sml-final-project/library_programs.csv")
+revenue <- read_csv("../sml-final-project/library_revenue.csv")
+services <- read_csv("../sml-final-project/library_services.csv")
+```
+
+joining data together
+
+```{r, cache=TRUE, warning=FALSE}
+libraries <- inner_join(circulation, demographics, by = "FSCS Key")
+libraries <- inner_join(libraries, electronic, by = "FSCS Key")
+libraries <- inner_join(libraries, programs, by = "FSCS Key")
+libraries <- inner_join(libraries, revenue, by = "FSCS Key")
+libraries <- inner_join(libraries, services, by = "FSCS Key")
+```
+
+selecting the right variables
+
+```{r}
+libraries_clean <- libraries|>
+  select(!c("Library Name.y", "Locale.y", "Service Area Population.y", "Library Name.x.x" ,
+            "Locale.x.x","Suppression Note.x", "Service Area Population.x.x", "Library Name.y.y",
+            "Locale.y.y", "Service Area Population.y.y", "Library Name.x.x.x", "Locale.x.x.x",
+            "Suppression Note.y", "Service Area Population.x.x.x", "Library Name.y.y.y",
+            "Locale.y.y.y", "Service Area Population.y.y.y"))|>
+  rename("Library Name"="Library Name.x", "Locale"="Locale.x",
+         "Service Area Population"="Service Area Population.x","Service Hours per Year"="Hours/Year")
+
+
+variable.names(libraries_clean)
+```
+
+
+
+
+
+
+to do:
+find complete observations (some missing data is coded as negative numbers)
+
+```{r}
+libraries_clean|>
+  mutate(recode("Total Circulation", -3 = NA))
+```
+
