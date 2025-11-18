@@ -1,0 +1,121 @@
+---
+title: "Final Project Fitting Models"
+authors: "Anna Livingstone Nate Groves"
+date: "Fall 2025"
+output:
+  pdf_document:
+    number_sections: no
+    toc: false
+    toc_depth: 1
+  html_document:
+    df_print: paged
+    number_sections: no
+    toc: false
+    toc_depth: 1
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(corrplot)
+library(car)
+library(boot)
+library(leaps)
+libraries <- read_csv("../data/libraries.csv")
+
+
+
+```
+
+Define functions so we can remove outliers from training data.
+```{r}
+# Function to remove outliers using the IQR rule
+remove_outliers <- function(x) {
+  if (is.numeric(x) && length(unique(na.omit(x))) > 2) {  # skip binary
+    q1 <- quantile(x, 0.25, na.rm = TRUE)
+    q3 <- quantile(x, 0.75, na.rm = TRUE)
+    iqr <- q3 - q1
+    lower <- q1 - 1.5 * iqr
+    upper <- q3 + 1.5 * iqr
+    x[x < lower | x > upper] <- NA  # mark outliers
+  }
+  return(x)
+}
+
+# Columns to ignore
+ignore_cols <- c("Bookmobiles", "Branch Library", "state")
+
+# Apply only to numeric, non-binary, and not ignored columns
+libraries <- libraries %>%
+  mutate(across(
+    .cols = where(is.numeric) & !all_of(ignore_cols),
+    .fns = remove_outliers
+  )) %>%
+  drop_na()
+
+# Count occurrences per state
+state_counts <- table(libraries$state)
+
+# Find states with < 20 occurrences
+rare_states <- names(state_counts[state_counts < 20])
+
+# Combine them into "Other" (this is for CV purposes)
+libraries$state <- as.character(libraries$state)
+libraries$state[libraries$state %in% rare_states] <- "Other"
+libraries$state <- factor(libraries$state)  # re-factor to clean up
+# Do the same for testing data:
+library_testing <- read_csv("../data/libraries_testing.csv")
+library_testing$state <- as.character(library_testing$state)
+library_testing$state[library_testing$state %in% rare_states] <- "Other"
+library_testing$state[!(library_testing$state %in% libraries$state)] <- "Other"
+library_testing$state <- factor(library_testing$state)  # re-factor to clean up
+
+```
+
+Libraries is already the training set.
+We can start by using a full linear model:
+```{r}
+full.library.model <- glm(`Total Circulation` ~ ., data = libraries, family = "gaussian")
+summary(full.library.model)
+```
+
+
+The full library model has lots of predictors from the dummy variables of state, 
+but we can probably remove some of the predictors. 
+```{r}
+step(full.library.model, direction="both")
+```
+The best model uses less predictors, and we can save it: 
+
+```{r}
+best.stepwise.model <- glm(formula = `Total Circulation` ~ state + Locale + `Service Area Population` +
+    `Percentage of Children's Material Circulation` + `Branch Library` + 
+    `Internet Computers` + `Wireless Sessions` + `Children's Program Attendance` + 
+    `Local Revenue ($)` + `State Revenue ($)` + `Hours/Year` + 
+    `Physical Visits` + `Registered Users` + `Inter-library Loans from Other Library`, 
+    data = libraries, family = "gaussian")
+
+```
+
+We can compare the prediction errors for both models using CV:
+```{r}
+set.seed(13)
+cv.glm(libraries, best.stepwise.model, K=100)$delta[2]
+set.seed(13)
+cv.glm(libraries, full.library.model, K=100)$delta[2]
+```
+Here, we see that the stepwise model has a lower delta than the full selection model.
+
+We can test both models against the testing data. 
+```{r}
+full.predictions <- predict(full.library.model, newdata = library_testing, type = "response")
+full.residuals <- library_testing$`Total Circulation` - full.predictions
+stepwise.predictions <- predict(best.stepwise.model, newdata = library_testing, type = "response")
+stepwise.residuals <- library_testing$`Total Circulation` - stepwise.predictions
+full.MSE <- mean((full.residuals)^2)
+stepwise.MSE <- mean((stepwise.residuals)^2)
+print(c(full.MSE, stepwise.MSE))
+```
+One the testing data, the full model actually performed better than the stepwise
+model, going against the CV results.
+
