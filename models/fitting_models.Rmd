@@ -146,7 +146,10 @@ I don't know why this isn't working
 set.seed(4545)
 libraries.tree <- select(libraries, - state, -Locale, -`Central Library`, -`Branch Library`, -Bookmobiles)
 
-# tree.libraries <- tree(`Total Circulation` ~ ., data = libraries.tree)
+names(libraries.tree) <- make.names(names(libraries.tree))
+
+#tree.libraries <- 
+tree(Total.Circulation ~ . , data = libraries.tree)
 ```
 
 # PLSR
