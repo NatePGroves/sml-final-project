@@ -21,10 +21,10 @@ library(corrplot)
 library(car)
 library(boot)
 library(leaps)
+library(glmnet)
+library(tree)
+library(pls)
 libraries <- read_csv("../data/libraries.csv")
-
-
-
 ```
 
 Define functions so we can remove outliers from training data.
@@ -69,10 +69,15 @@ library_testing$state <- as.character(library_testing$state)
 library_testing$state[library_testing$state %in% rare_states] <- "Other"
 library_testing$state[!(library_testing$state %in% libraries$state)] <- "Other"
 library_testing$state <- factor(library_testing$state)  # re-factor to clean up
+libraries <- libraries %>%
+  mutate(across(where(is.character), as.factor))
 
 ```
 
 Libraries is already the training set.
+
+# Full Linear Model and Stepwise Selected Linear Model
+
 We can start by using a full linear model:
 ```{r}
 full.library.model <- glm(`Total Circulation` ~ ., data = libraries, family = "gaussian")
@@ -118,4 +123,38 @@ print(c(full.MSE, stepwise.MSE))
 ```
 One the testing data, the full model actually performed better than the stepwise
 model, going against the CV results.
+
+# Ridge and LASSO Shrinkage Models
+
+Start by getting the design and response matrices
+```{r}
+libraries.X <- model.matrix(full.library.model)[,-1]
+libraries.Y <- full.library.model$data$`Total Circulation`
+
+#lets use cross validation and get a ridge and LASSO model
+set.seed(4545)
+libraries.ridge <- cv.glmnet(x = libraries.X, y=libraries.Y, alpha=0)
+set.seed(4545)
+libraries.lasso <- cv.glmnet(x = libraries.X, y=libraries.Y, alpha=1)
+```
+
+
+# Tree Methods
+I don't know why this isn't working
+
+```{r}
+set.seed(4545)
+libraries.tree <- select(libraries, - state, -Locale, -`Central Library`, -`Branch Library`, -Bookmobiles)
+
+# tree.libraries <- tree(`Total Circulation` ~ ., data = libraries.tree)
+```
+
+# PLSR
+
+```{r}
+libraries.plsr <- plsr(`Total Circulation` ~ ., data=libraries, scale=T, validation="CV")
+summary(libraries.plsr)
+validationplot(libraries.plsr)
+# 14 comps for minimum MSE, but I think that we could less
+```
 
