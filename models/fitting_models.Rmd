@@ -71,6 +71,8 @@ library_testing$state[!(library_testing$state %in% libraries$state)] <- "Other"
 library_testing$state <- factor(library_testing$state)  # re-factor to clean up
 libraries <- libraries %>%
   mutate(across(where(is.character), as.factor))
+library_testing <- library_testing %>%
+  mutate(across(where(is.character), as.factor))
 
 ```
 
@@ -111,19 +113,6 @@ cv.glm(libraries, full.library.model, K=100)$delta[2]
 ```
 Here, we see that the stepwise model has a lower delta than the full selection model.
 
-We can test both models against the testing data. 
-```{r}
-full.predictions <- predict(full.library.model, newdata = library_testing, type = "response")
-full.residuals <- library_testing$`Total Circulation` - full.predictions
-stepwise.predictions <- predict(best.stepwise.model, newdata = library_testing, type = "response")
-stepwise.residuals <- library_testing$`Total Circulation` - stepwise.predictions
-full.MSE <- mean((full.residuals)^2)
-stepwise.MSE <- mean((stepwise.residuals)^2)
-print(c(full.MSE, stepwise.MSE))
-```
-One the testing data, the full model actually performed better than the stepwise
-model, going against the CV results.
-
 # Ridge and LASSO Shrinkage Models
 
 Start by getting the design and response matrices
@@ -134,30 +123,95 @@ libraries.Y <- full.library.model$data$`Total Circulation`
 #lets use cross validation and get a ridge and LASSO model
 set.seed(4545)
 libraries.ridge <- cv.glmnet(x = libraries.X, y=libraries.Y, alpha=0)
+plot(libraries.ridge) # 9 recommended for ridge
 set.seed(4545)
 libraries.lasso <- cv.glmnet(x = libraries.X, y=libraries.Y, alpha=1)
+plot(libraries.lasso) # 7 recommended for LASSO
+
 ```
 
 
 # Tree Methods
-I don't know why this isn't working
 
 ```{r}
 set.seed(4545)
-libraries.tree <- select(libraries, - state, -Locale, -`Central Library`, -`Branch Library`, -Bookmobiles)
+libraries.tree.data <- libraries
 
-names(libraries.tree) <- make.names(names(libraries.tree))
+names(libraries.tree.data) <- make.names(names(libraries.tree.data))
 
-#tree.libraries <- 
-tree(Total.Circulation ~ . , data = libraries.tree)
+tree.libraries <- tree(Total.Circulation ~ . , data = libraries.tree.data)
 ```
+```{r}
+set.seed(4545)
+cv.tree.libraries <- cv.tree(tree.libraries, K = 10)
+which(min(cv.tree.libraries$dev) == cv.tree.libraries$dev)
+cv.tree.libraries$size[1] # The cross validation pruning recommends 8 terminal nodes
+```
+
+```{r}
+par(mfrow = c(1, 2))
+plot(cv.tree.libraries$size, cv.tree.libraries$dev, type = "b")
+plot(cv.tree.libraries$k, cv.tree.libraries$dev, type = "b")
+
+```
+We should probably consider 4 or 8 terminal nodes
+
+```{r}
+four.leaf.tree <- prune.tree(tree.libraries, best = 4)
+eight.leaf.tree <- prune.tree(tree.libraries, best = 8)
+
+```
+
+
 
 # PLSR
 
 ```{r}
 libraries.plsr <- plsr(`Total Circulation` ~ ., data=libraries, scale=T, validation="CV")
+sapply(libraries, function(x) length(unique(x)))
+
 summary(libraries.plsr)
+
 validationplot(libraries.plsr)
-# 14 comps for minimum MSE, but I think that we could less
+# 15 comps for minimum adjusted RMSE, but I think that we could less, maybe 11
 ```
+
+# Model Testing
+We can test both linear against the testing data. 
+```{r}
+full.predictions <- predict(full.library.model, newdata = library_testing, type = "response")
+full.residuals <- library_testing$`Total Circulation` - full.predictions
+stepwise.predictions <- predict(best.stepwise.model, newdata = library_testing, type = "response")
+stepwise.residuals <- library_testing$`Total Circulation` - stepwise.predictions
+full.MSE <- mean((full.residuals)^2)
+stepwise.MSE <- mean((stepwise.residuals)^2)
+print(c(full.MSE, stepwise.MSE))
+```
+On the testing data, the full model actually performed better than the stepwise
+model, going against the CV results.
+
+
+Now let's test LASSO and ridge
+```{r}
+X.test <- model.matrix(`Total Circulation` ~ ., data = library_testing)[, -1]
+Y.test = library_testing$`Total Circulation`
+ridge.predictions = predict(libraries.ridge, newx = X.test, s = 9)
+lasso.predictions = predict(libraries.lasso, newx = X.test, s = 7)
+```
+Now test the tree:
+```{r}
+# fix the testing names so they work for the tree:
+libraries.tree.testing.data <- library_testing
+names(libraries.tree.testing.data) <- make.names(names(library_testing))
+four.leaf.predictions <- predict(four.leaf.tree, newdata = libraries.tree.testing.data)
+eight.leaf.predictions <- predict(eight.leaf.tree, newdata = libraries.tree.testing.data)
+```
+
+Finally the PLSR:
+```{r}
+plsr.predictions.15.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 15)
+plsr.predictions.11.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 11)
+```
+
+
 
