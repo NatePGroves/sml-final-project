@@ -25,6 +25,7 @@ library(leaps)
 library(glmnet)
 library(tree)
 library(pls)
+library(gbm)
 libraries <- read_csv("../data/libraries.csv")
 ```
 
@@ -203,6 +204,13 @@ plot(eight.leaf.tree)
 text(eight.leaf.tree, pretty = 0, cex=.6)
 ```
 
+```{r}
+set.seed(2025)
+boost.libraries <- gbm(`Total.Circulation` ~ ., data = libraries.tree.data,
+distribution = "gaussian", n.trees = 500,
+interaction.depth = 27, shrinkage = 0.1)
+summary(boost.libraries)
+```
 
 
 # PLSR
@@ -216,6 +224,8 @@ summary(libraries.plsr)
 validationplot(libraries.plsr)
 # 15 comps for minimum adjusted RMSE, but I think that we could less, maybe 11
 ```
+
+
 
 # Model Testing
 We can test both linear against the testing data. 
@@ -334,20 +344,66 @@ ggplot(data = tree8.plot.data , aes(x = eight.leaf.predictions, y = eight.leaf.r
            y = "Residuals")
 ```
 
+```{r}
+boost.predictions <- predict(boost.libraries, newdata=libraries.tree.testing.data, n.trees = 500)
+boost.residuals <- library_testing$`Total Circulation` - boost.predictions
+boost.MSE <- mean((boost.residuals)^2)
+
+boost.plot.data <- cbind(boost.predictions, boost.residuals)
+
+ggplot(data = tree8.plot.data , aes(x = boost.predictions, y = boost.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "Boosted Tree Model Residual Plot",
+           x = "Fitted Values",
+           y = "Residuals")
+```
+
 
 Finally the PLSR:
+
+11 components
+```{r}
+plsr.predictions.11.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 11)
+plsr.11.residuals <- library_testing$`Total Circulation` - plsr.predictions.11.comp
+plsr.11.MSE <- mean((plsr.11.residuals)^2)
+
+plsr.11.plot.data <- cbind(plsr.predictions.11.comp, plsr.11.residuals)
+
+ggplot(data = plsr.11.plot.data , aes(x = plsr.predictions.11.comp, y = plsr.11.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "PLSR Model Residual Plot (11 Components)",
+           x = "Fitted Values",
+           y = "Residuals")
+```
+
+15 components
 ```{r}
 plsr.predictions.15.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 15)
-plsr.predictions.11.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 11)
+plsr.15.residuals <- library_testing$`Total Circulation` - plsr.predictions.15.comp
+plsr.15.MSE <- mean((plsr.15.residuals)^2)
+
+plsr.15.plot.data <- cbind(plsr.predictions.15.comp, plsr.15.residuals)
+
+ggplot(data = plsr.15.plot.data , aes(x = plsr.predictions.15.comp, y = plsr.15.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "PLSR Model Residual Plot (15 Components)",
+           x = "Fitted Values",
+           y = "Residuals")
 ```
+
 
 Let's compare all the models!
 ```{r}
-boxplot.data1 <- cbind(library_testing$`Total Circulation`, full.predictions, stepwise.predictions, ridge.predictions, lasso.predictions, four.leaf.predictions, eight.leaf.predictions)|>
-  rename(Testing="library_testing$`Total Circulation`")
+boxplot.data1 <- cbind(library_testing$`Total Circulation`, full.predictions, stepwise.predictions, ridge.predictions, lasso.predictions, four.leaf.predictions, eight.leaf.predictions, boost.predictions, plsr.predictions.11.comp, plsr.predictions.15.comp)|>
+  rename(Testing="library_testing$`Total Circulation`",
+         PLSR.11="Total Circulation.11 comps",
+         PLSR.15="Total Circulation.15 comps")
 
 boxplot.data <- boxplot.data1|>
-  pivot_longer(cols= c(Testing, full.predictions, stepwise.predictions, ridge.predictions, lasso.predictions, four.leaf.predictions, eight.leaf.predictions),
+  pivot_longer(cols= c(Testing, full.predictions, stepwise.predictions, ridge.predictions, lasso.predictions, four.leaf.predictions, eight.leaf.predictions, boost.predictions, PLSR.11, PLSR.15),
                              names_to = "Model",
                              values_to = "Prediction")
 
