@@ -24,6 +24,7 @@ library(leaps)
 library(glmnet)
 library(tree)
 library(pls)
+library(gbm)
 libraries <- read_csv("../data/libraries.csv")
 ```
 
@@ -104,6 +105,30 @@ best.stepwise.model <- glm(formula = `Total Circulation` ~ state + Locale + `Ser
 
 ```
 
+```{r}
+plot(fitted(full.library.model), residuals(full.library.model),
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted Values Plot")
+# Add a horizontal line at y=0 for reference
+abline(h = 0, col = "red", lty = 2)
+
+# Optionally, add a smoothed line to highlight patterns
+lines(lowess(fitted(full.library.model), residuals(full.library.model)), col = "blue")
+
+```
+```{r}
+plot(fitted(best.stepwise.model), residuals(best.stepwise.model),
+     xlab = "Fitted Values",
+     ylab = "Residuals",
+     main = "Residuals vs Fitted Values Plot")
+# Add a horizontal line at y=0 for reference
+abline(h = 0, col = "red", lty = 2)
+
+# Optionally, add a smoothed line to highlight patterns
+lines(lowess(fitted(best.stepwise.model), residuals(best.stepwise.model)), col = "blue")
+```
+
 We can compare the prediction errors for both models using CV:
 ```{r}
 set.seed(13)
@@ -159,10 +184,14 @@ We should probably consider 4 or 8 terminal nodes
 ```{r}
 four.leaf.tree <- prune.tree(tree.libraries, best = 4)
 eight.leaf.tree <- prune.tree(tree.libraries, best = 8)
-
+set.seed(2025)
+boost.libraries <- gbm(`Total.Circulation` ~ ., data = libraries.tree.data,
+distribution = "gaussian", n.trees = 500,
+interaction.depth = 27, shrinkage = 0.1)
+summary(boost.libraries)
 ```
-
-
+Unsurprisingly, physical visits, local.revenue, and registered.users are in the top 5
+most important features, along with state and Inter.library.Loans.from.Other.Library.
 
 # PLSR
 
@@ -198,11 +227,12 @@ Y.test = library_testing$`Total Circulation`
 ridge.predictions = predict(libraries.ridge, newx = X.test, s = 9)
 lasso.predictions = predict(libraries.lasso, newx = X.test, s = 7)
 ```
-Now test the tree:
+Now test the trees and boosted models:
 ```{r}
 # fix the testing names so they work for the tree:
 libraries.tree.testing.data <- library_testing
 names(libraries.tree.testing.data) <- make.names(names(library_testing))
+boost.predictions <- predict(boost.libraries, newdata=libraries.tree.testing.data, n.trees = 500)
 four.leaf.predictions <- predict(four.leaf.tree, newdata = libraries.tree.testing.data)
 eight.leaf.predictions <- predict(eight.leaf.tree, newdata = libraries.tree.testing.data)
 ```
@@ -212,6 +242,213 @@ Finally the PLSR:
 plsr.predictions.15.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 15)
 plsr.predictions.11.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 11)
 ```
+Now we can take all of the predictions and compare them to the actual results:
+```{r}
+# Start with the true values
+results <- tibble(
+  true = library_testing$`Total Circulation`,
+
+  full_pred       = full.predictions,
+  step_pred       = stepwise.predictions,
+  ridge_pred      = as.numeric(ridge.predictions),
+  lasso_pred      = as.numeric(lasso.predictions),
+  four_leaf_pred  = as.numeric(four.leaf.predictions),
+  eight_leaf_pred = as.numeric(eight.leaf.predictions),
+  plsr_15_pred    = as.numeric(plsr.predictions.15.comp),
+  plsr_11_pred    = as.numeric(plsr.predictions.11.comp),
+  boost_pred = as.numeric(boost.predictions)
+)
+
+# Compute residuals for each model in tidyverse style
+results <- results %>%
+  mutate(
+    full_resid       = true - full_pred,
+    step_resid       = true - step_pred,
+    ridge_resid      = true - ridge_pred,
+    lasso_resid      = true - lasso_pred,
+    four_leaf_resid  = true - four_leaf_pred,
+    eight_leaf_resid = true - eight_leaf_pred,
+    plsr_15_resid    = true - plsr_15_pred,
+    plsr_11_resid    = true - plsr_11_pred,
+    boost_resid      = true - boost_pred
+  )
+
+```
+
+```{r}
+plot_data <- results %>%
+  select(true, ends_with("_pred"), ends_with("_resid")) %>%
+  pivot_longer(
+    cols = -true,
+    names_to = c("model", ".value"),
+    names_pattern = "(.*)_(pred|resid)"
+  )
+
+```
+
+straight comparison plot:
+```{r}
+rmse_data <- plot_data %>%
+  group_by(model) %>%
+  summarise(MSE = (mean(resid^2)))
+
+ggplot(rmse_data, aes(x = reorder(model, MSE), y = MSE)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Model Comparison: RMSE",
+    x = "Model",
+    y = "MSE"
+  ) +
+  theme_bw()
+
+```
+Analysis:
+The tree methods are confidently the worst, performing well worse than the other
+models. The best performing model is ridge regression, which is not too surprising, 
+we knew we were dealing with a dataset with lots of colinearity, so seeing the top
+three models being ridge, PLSR with 11 components, and LASSO is not too surprising.
+
+```{r}
+norm_shape_data <- results %>%
+  select(true, ends_with("_pred")) %>%
+  arrange(true) %>% 
+  mutate(index = row_number()) %>%
+  mutate(across(-index, \(x) (x - min(x)) / (max(x) - min(x)))) %>%
+  pivot_longer(
+    cols = -index,
+    names_to = "series",
+    values_to = "value"
+  )
+
+ggplot(norm_shape_data, aes(x = index, y = value, color = series)) +
+  geom_line(alpha = 0.8) +
+  labs(
+    title = "Normalized Shape Comparison (0–1 scaling)",
+    x = "Sorted Observation Index",
+    y = "Scaled Value"
+  ) +
+  theme_bw()
+
+```
+I think this is a cool graph showing the shape of the predictions compare to the predicted values
+
+Let's clean it up by excluding the tree methods which we know did not work well:
+```{r}
+norm_shape_data <- results %>%
+  select(true, ends_with("_pred"), -eight_leaf_pred, -four_leaf_pred, - boost_pred) %>%
+  arrange(true) %>% 
+  mutate(index = row_number()) %>%
+  mutate(across(-index, \(x) (x - min(x)) / (max(x) - min(x)))) %>%
+  pivot_longer(
+    cols = -index,
+    names_to = "series",
+    values_to = "value"
+  )
+
+ggplot(norm_shape_data, aes(x = index, y = value, color = series)) +
+  geom_line(alpha = 0.8) +
+  labs(
+    title = "Normalized Shape Comparison (0–1 scaling)",
+    x = "Sorted Observation Index",
+    y = "Scaled Value"
+  ) +
+  theme_bw()
+
+```
 
 
+To compare only the top three models:
+
+
+```{r}
+norm_shape_data <- results %>%
+  select(true, lasso_pred, ridge_pred, plsr_11_pred) %>%
+  arrange(true) %>% 
+  mutate(index = row_number()) %>%
+  mutate(across(-index, \(x) (x - min(x)) / (max(x) - min(x)))) %>%
+  pivot_longer(
+    cols = -index,
+    names_to = "series",
+    values_to = "value"
+  )
+
+ggplot(norm_shape_data, aes(x = index, y = value, color = series)) +
+  geom_line(alpha = 0.8) +
+  labs(
+    title = "Normalized Shape Comparison (0–1 scaling)",
+    x = "Sorted Observation Index",
+    y = "Scaled Value"
+  ) +
+  theme_bw()
+
+```
+```{r}
+shape_data <- results %>%
+  select(true, ends_with("_pred")) %>%
+  arrange(true) %>% 
+  mutate(index = row_number()) %>%
+  pivot_longer(
+    cols = -index,
+    names_to = "series",
+    values_to = "value"
+  )
+ggplot(shape_data, aes(x = index, y = log1p(value), color = series)) +
+  geom_line(alpha = 0.7) +
+  labs(
+    title = "Shape Comparison of Predictions (log-transformed)",
+    x = "Sorted Observation Index",
+    y = "log1p(value)"
+  ) +
+  theme_bw()
+```
+```{r}
+
+box_data <- results %>%
+  select(true, ends_with("_pred")) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "series",
+    values_to = "value"
+  )
+
+ggplot(box_data, aes(x = series, y = value, fill = series)) +
+  geom_boxplot(outlier.alpha = 0.2) +
+  scale_y_log10() +
+  coord_flip() +
+  labs(
+    title = "Distribution Comparison (log scale)",
+    x = "Series",
+    y = "log10(value)"
+  ) +
+  theme_bw()
+```
+
+```{r}
+
+
+# Reshape to long format
+violin_data <- results %>%
+  select(true, ends_with("_pred")) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "series",
+    values_to = "value"
+  )
+
+# Violin plot
+ggplot(violin_data, aes(x = series, y = value, fill = series)) +
+  geom_violin(alpha = 0.7, scale = "width", trim = TRUE) +
+  geom_boxplot(width = 0.1, fill = "white", outlier.alpha = 0.2) +
+  coord_flip() +
+  scale_y_log10() +
+  labs(
+    title = "Violin Plot (Log10): True vs Model Predictions",
+    x = "Series",
+    y = "log10(Value)"
+  ) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+```
 
