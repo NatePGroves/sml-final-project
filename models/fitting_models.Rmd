@@ -148,11 +148,10 @@ libraries.Y <- full.library.model$data$`Total Circulation`
 #lets use cross validation and get a ridge and LASSO model
 set.seed(4545)
 libraries.ridge <- cv.glmnet(x = libraries.X, y=libraries.Y, alpha=0)
-plot(libraries.ridge) # 9 recommended for ridge
+plot(libraries.ridge) 
 set.seed(4545)
 libraries.lasso <- cv.glmnet(x = libraries.X, y=libraries.Y, alpha=1)
-plot(libraries.lasso) # 7 recommended for LASSO
-
+plot(libraries.lasso) 
 ```
 
 
@@ -166,6 +165,7 @@ names(libraries.tree.data) <- make.names(names(libraries.tree.data))
 
 tree.libraries <- tree(Total.Circulation ~ . , data = libraries.tree.data)
 ```
+
 ```{r}
 set.seed(4545)
 cv.tree.libraries <- cv.tree(tree.libraries, K = 10)
@@ -224,8 +224,8 @@ Now let's test LASSO and ridge
 ```{r}
 X.test <- model.matrix(`Total Circulation` ~ ., data = library_testing)[, -1]
 Y.test = library_testing$`Total Circulation`
-ridge.predictions = predict(libraries.ridge, newx = X.test, s = 9)
-lasso.predictions = predict(libraries.lasso, newx = X.test, s = 7)
+ridge.predictions = predict(libraries.ridge, newx = X.test, s = 2197)
+lasso.predictions = predict(libraries.lasso, newx = X.test, s = 209.7)
 ```
 Now test the trees and boosted models:
 ```{r}
@@ -296,7 +296,7 @@ ggplot(rmse_data, aes(x = reorder(model, MSE), y = MSE)) +
   geom_col(fill = "steelblue") +
   coord_flip() +
   labs(
-    title = "Model Comparison: RMSE",
+    title = "Model Comparison: MSE",
     x = "Model",
     y = "MSE"
   ) +
