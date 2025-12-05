@@ -16,6 +16,7 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 999)
 library(tidyverse)
 library(corrplot)
 library(car)
@@ -85,8 +86,19 @@ We can start by using a full linear model:
 ```{r}
 full.library.model <- glm(`Total Circulation` ~ ., data = libraries, family = "gaussian")
 summary(full.library.model)
+
+full.model.coeff <- data.frame(
+  Variable = names(full.library.model$coefficients),
+  Coefficient = full.library.model$coefficients)|>
+  filter(Coefficient >=75 | Coefficient <=-75)
+
+ggplot(full.model.coeff)+
+  geom_bar(mapping=aes(Variable, Coefficient), stat="identity")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))+
+  ggtitle("Estimated Coefficients: Full Linear Model (Training)")
 ```
 
+Reference Levels: state- Alaska, Locale- City
 
 The full library model has lots of predictors from the dummy variables of state, 
 but we can probably remove some of the predictors. 
@@ -102,32 +114,22 @@ best.stepwise.model <- glm(formula = `Total Circulation` ~ state + Locale + `Ser
     `Local Revenue ($)` + `State Revenue ($)` + `Hours/Year` + 
     `Physical Visits` + `Registered Users` + `Inter-library Loans from Other Library`, 
     data = libraries, family = "gaussian")
-
+summary(best.stepwise.model)
 ```
+
 
 ```{r}
-plot(fitted(full.library.model), residuals(full.library.model),
-     xlab = "Fitted Values",
-     ylab = "Residuals",
-     main = "Residuals vs Fitted Values Plot")
-# Add a horizontal line at y=0 for reference
-abline(h = 0, col = "red", lty = 2)
+step.model.coeff <- data.frame(
+  Variable = names(best.stepwise.model$coefficients),
+  Coefficient = best.stepwise.model$coefficients)|>
+  filter(Coefficient >=75 | Coefficient <=-75)
 
-# Optionally, add a smoothed line to highlight patterns
-lines(lowess(fitted(full.library.model), residuals(full.library.model)), col = "blue")
-
+ggplot(step.model.coeff)+
+  geom_bar(mapping=aes(Variable, Coefficient), stat="identity")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))+
+  ggtitle("Estimated Coefficients: Stepwise Model (Training)")
 ```
-```{r}
-plot(fitted(best.stepwise.model), residuals(best.stepwise.model),
-     xlab = "Fitted Values",
-     ylab = "Residuals",
-     main = "Residuals vs Fitted Values Plot")
-# Add a horizontal line at y=0 for reference
-abline(h = 0, col = "red", lty = 2)
 
-# Optionally, add a smoothed line to highlight patterns
-lines(lowess(fitted(best.stepwise.model), residuals(best.stepwise.model)), col = "blue")
-```
 
 We can compare the prediction errors for both models using CV:
 ```{r}
@@ -144,16 +146,24 @@ Start by getting the design and response matrices
 ```{r}
 libraries.X <- model.matrix(full.library.model)[,-1]
 libraries.Y <- full.library.model$data$`Total Circulation`
+```
 
+```{r}
 #lets use cross validation and get a ridge and LASSO model
 set.seed(4545)
 libraries.ridge <- cv.glmnet(x = libraries.X, y=libraries.Y, alpha=0)
-plot(libraries.ridge) 
-set.seed(4545)
-libraries.lasso <- cv.glmnet(x = libraries.X, y=libraries.Y, alpha=1)
-plot(libraries.lasso) 
+plot(libraries.ridge) # 9 recommended for ridge
+lambda.ridge <- libraries.ridge$lambda.min
 ```
 
+LASSO
+```{r}
+
+set.seed(4545)
+libraries.lasso <- cv.glmnet(x = libraries.X, y=libraries.Y, alpha=1)
+plot(libraries.lasso) # 7 recommended for LASSO
+lambda.lasso <- libraries.lasso$lambda.min
+```
 
 # Tree Methods
 
@@ -183,15 +193,25 @@ We should probably consider 4 or 8 terminal nodes
 
 ```{r}
 four.leaf.tree <- prune.tree(tree.libraries, best = 4)
+plot(four.leaf.tree)
+text(four.leaf.tree, pretty = 0)
+
+```
+
+```{r}
 eight.leaf.tree <- prune.tree(tree.libraries, best = 8)
+plot(eight.leaf.tree)
+text(eight.leaf.tree, pretty = 0, cex=.6)
+```
+
+```{r}
 set.seed(2025)
 boost.libraries <- gbm(`Total.Circulation` ~ ., data = libraries.tree.data,
 distribution = "gaussian", n.trees = 500,
 interaction.depth = 27, shrinkage = 0.1)
 summary(boost.libraries)
 ```
-Unsurprisingly, physical visits, local.revenue, and registered.users are in the top 5
-most important features, along with state and Inter.library.Loans.from.Other.Library.
+
 
 # PLSR
 
@@ -204,6 +224,8 @@ summary(libraries.plsr)
 validationplot(libraries.plsr)
 # 15 comps for minimum adjusted RMSE, but I think that we could less, maybe 11
 ```
+
+
 
 # Model Testing
 We can test both linear against the testing data. 
@@ -219,28 +241,158 @@ print(c(full.MSE, stepwise.MSE))
 On the testing data, the full model actually performed better than the stepwise
 model, going against the CV results.
 
+Let's make a residual plot for the full linear model
+```{r}
+full.plot.data <- cbind(full.predictions, full.residuals)
+
+ggplot(data = full.plot.data , aes(x = full.predictions, y = full.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "Full Linear Model Residual Plot",
+           x = "Fitted Values",
+           y = "Residuals")
+```
+
+Now a residual plot for the stepwise model.
+```{r}
+step.plot.data <- cbind(stepwise.predictions, stepwise.residuals)
+
+ggplot(data = step.plot.data , aes(x = stepwise.predictions, y = stepwise.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "Stepwise Model Residual Plot",
+           x = "Fitted Values",
+           y = "Residuals")
+```
+
 
 Now let's test LASSO and ridge
 ```{r}
 X.test <- model.matrix(`Total Circulation` ~ ., data = library_testing)[, -1]
 Y.test = library_testing$`Total Circulation`
-ridge.predictions = predict(libraries.ridge, newx = X.test, s = 2197)
-lasso.predictions = predict(libraries.lasso, newx = X.test, s = 209.7)
+ridge.predictions = predict(libraries.ridge, newx = X.test, type="response", s = lambda.ridge)
+ridge.residuals <- library_testing$`Total Circulation` - ridge.predictions
+ridge.MSE <- mean((ridge.residuals)^2)
+
+#organizing data for residual plot
+ridge.predictions <- as.data.frame(ridge.predictions)|>
+  rename(ridge.predictions=s1)
+ridge.residuals <- as.data.frame(ridge.residuals)|>
+  rename(residuals=s1)
+ridge.plot.data <- cbind(ridge.predictions, ridge.residuals)
+
+ggplot(data = ridge.plot.data , aes(x = ridge.predictions, y = residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "Ridge Regression Residual Plot",
+           x = "Fitted Values",
+           y = "Residuals")
 ```
-Now test the trees and boosted models:
+
+```{r}
+lasso.predictions = predict(libraries.lasso, newx = X.test, s = lambda.lasso)
+lasso.residuals <- library_testing$`Total Circulation` - lasso.predictions
+lasso.MSE <- mean((lasso.residuals)^2)
+
+#organizing data for residual plot
+lasso.predictions <- as.data.frame(lasso.predictions)|>
+  rename(lasso.predictions=s1)
+lasso.residuals <- as.data.frame(lasso.residuals)|>
+  rename(residuals=s1)
+lasso.plot.data <- cbind(lasso.predictions, lasso.residuals)
+
+ggplot(data = lasso.plot.data , aes(x = lasso.predictions, y = residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "Lasso Regression Residual Plot",
+           x = "Fitted Values",
+           y = "Residuals")
+```
+
+
+Now test the tree:
 ```{r}
 # fix the testing names so they work for the tree:
 libraries.tree.testing.data <- library_testing
 names(libraries.tree.testing.data) <- make.names(names(library_testing))
 boost.predictions <- predict(boost.libraries, newdata=libraries.tree.testing.data, n.trees = 500)
 four.leaf.predictions <- predict(four.leaf.tree, newdata = libraries.tree.testing.data)
-eight.leaf.predictions <- predict(eight.leaf.tree, newdata = libraries.tree.testing.data)
+four.leaf.residuals <- library_testing$`Total Circulation` - four.leaf.predictions
+four.leaf.MSE <- mean((four.leaf.residuals)^2)
+
+tree4.plot.data <- cbind(four.leaf.predictions, four.leaf.residuals)
+
+ggplot(data = tree4.plot.data , aes(x = four.leaf.predictions, y = four.leaf.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "Tree Model (4 Leaf) Residual Plot",
+           x = "Fitted Values",
+           y = "Residuals")
 ```
 
+```{r}
+eight.leaf.predictions <- predict(eight.leaf.tree, newdata = libraries.tree.testing.data)
+eight.leaf.residuals <- library_testing$`Total Circulation` - eight.leaf.predictions
+eight.leaf.MSE <- mean((eight.leaf.residuals)^2)
+
+tree8.plot.data <- cbind(eight.leaf.predictions, eight.leaf.residuals)
+
+ggplot(data = tree8.plot.data , aes(x = eight.leaf.predictions, y = eight.leaf.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "Tree Model (8 Leaf) Residual Plot",
+           x = "Fitted Values",
+           y = "Residuals")
+```
+
+```{r}
+boost.predictions <- predict(boost.libraries, newdata=libraries.tree.testing.data, n.trees = 500)
+boost.residuals <- library_testing$`Total Circulation` - boost.predictions
+boost.MSE <- mean((boost.residuals)^2)
+
+boost.plot.data <- cbind(boost.predictions, boost.residuals)
+
+ggplot(data = tree8.plot.data , aes(x = boost.predictions, y = boost.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "Boosted Tree Model Residual Plot",
+           x = "Fitted Values",
+           y = "Residuals")
+```
+
+
 Finally the PLSR:
+
+11 components
+```{r}
+plsr.predictions.11.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 11)
+plsr.11.residuals <- library_testing$`Total Circulation` - plsr.predictions.11.comp
+plsr.11.MSE <- mean((plsr.11.residuals)^2)
+
+plsr.11.plot.data <- cbind(plsr.predictions.11.comp, plsr.11.residuals)
+
+ggplot(data = plsr.11.plot.data , aes(x = plsr.predictions.11.comp, y = plsr.11.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "PLSR Model Residual Plot (11 Components)",
+           x = "Fitted Values",
+           y = "Residuals")
+```
+
+15 components
 ```{r}
 plsr.predictions.15.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 15)
-plsr.predictions.11.comp <- predict(libraries.plsr, newdata = X.test, ncomp = 11)
+plsr.15.residuals <- library_testing$`Total Circulation` - plsr.predictions.15.comp
+plsr.15.MSE <- mean((plsr.15.residuals)^2)
+
+plsr.15.plot.data <- cbind(plsr.predictions.15.comp, plsr.15.residuals)
+
+ggplot(data = plsr.15.plot.data , aes(x = plsr.predictions.15.comp, y = plsr.15.residuals)) +
+      geom_point() +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "purple") +
+      labs(title = "PLSR Model Residual Plot (15 Components)",
+           x = "Fitted Values",
+           y = "Residuals")
 ```
 Now we can take all of the predictions and compare them to the actual results:
 ```{r}
